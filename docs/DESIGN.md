@@ -246,8 +246,9 @@ Deterministic, never random — a flaky demo is worse than no demo.
 - `tok_ok` succeeds.
 - `tok_decline` fails with `card_declined`.
 - `tok_slow` succeeds after a delay, used to force the lapse-mid-payment case.
-- `tok_refund_fail` succeeds, then refuses to refund, used to force the one
-  state a human has to resolve.
+- `tok_refund_fail` behaves as `tok_slow` and then refuses to refund, used to
+  force the one state a human has to resolve. It has to be slow too: the refund
+  path is only reachable when the charge outlives the hold.
 
 `idempotency_key` is unique in the table. A replay returns the stored result
 instead of charging again.
