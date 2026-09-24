@@ -38,10 +38,13 @@ that could equally be made with `curl`.
 
 ## Time spent
 
-Roughly four hours across two days, AI-assisted throughout — see
-[AI_USAGE.md](AI_USAGE.md). Most of the second half went to verification rather
-than to writing code, which is where the value was: the concurrency test is only
-worth anything because it was made to fail first.
+Around four hours, most of it design and verification rather than typing. The
+commit history is compressed because the design and the task-by-task plan were
+written first and committed before any code — the implementation then followed
+them in one sitting, AI-assisted throughout. See [AI_USAGE.md](AI_USAGE.md).
+
+The verification is where the time went, and it is the part worth having: the
+concurrency test is only worth anything because it was made to fail first.
 
 ## Assumptions
 
