@@ -37,16 +37,17 @@ merely that an error occurred.
 
 **A declined card releasing the seat.** The first design moved a booking to a
 terminal `payment_failed` the moment the provider said no, which freed the seat
-immediately. I rejected it. Losing a trial slot to a mistyped card number is a
-bad product. The hold is what expires, not the booking: a decline keeps the seat
-until the window runs out, and the parent can retry inside it.
+immediately, ending the booking. I rejected it. Losing a trial slot to a
+mistyped card number is a bad product, so a decline leaves the booking alone and
+the parent retries inside the window it already has.
 
-**Schema that had drifted from the design.** Once the hold model was settled I
-read the schema back against it and found three things that no longer matched: a
-counter named for confirmations when holds also occupy a seat, a uniqueness
-index covering only confirmed rows, and no expiry column at all. None of it
-would have failed to compile and the tests would have passed. It would simply
-have let one child hold two seats in the same class, quietly.
+**Schema that had drifted from the design.** Mid-way through, the written design
+and the schema had stopped agreeing in three places: the seat counter, a
+uniqueness index that covered confirmed rows only, and a missing expiry column.
+None of it would have failed to compile and the tests would have passed. The
+index was the one that mattered — as written it would have let one child queue
+twice for the same class, quietly. Worth recording because a spec and a schema
+drifting apart is invisible to a test suite that was written from the code.
 
 **A design that made the requirement unreachable.** This is the one worth
 reading. The first build reserved the seat when a parent selected a class, so
@@ -67,10 +68,12 @@ trigger and a CHECK, simply firing on the payment instead of on the selection.
 The lesson I would keep: an explanation of why a requirement does not apply is
 the point to stop and re-read the requirement.
 
-**Where its pushback was right.** It pointed out that blocking holds make the
-brief's literal race scenario impossible — User B cannot select a slot User A is
-holding. Rather than quietly answer an easier question, the README says so and
-answers the harder one: the hold lapsing while the payment is in flight.
+**Where it warned me and I did not listen.** It said early that reserving the
+seat on selection would make the brief's literal scenario impossible, and I
+treated that as a thing to document rather than a thing to fix — so the first
+README argued the point at length instead of changing the design. The warning
+was correct and a paragraph of explanation was the wrong response to it. That is
+the same failure as the one above, caught a second time from the other side.
 
 ## What I would change next time
 

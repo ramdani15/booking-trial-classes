@@ -86,6 +86,21 @@ to take a seat must `UPDATE` that one row, which is what serialises parents
 competing for the same one — and because only a confirmation occupies a seat,
 that contention lands on the payment.
 
+## Seed data
+
+`db/seed.sql`, loaded by `npm run db:reset`. Three parents, four children, three
+classes, covering each case the brief asks to see:
+
+| Case | Where |
+|---|---|
+| A class with available seats | **Science · Sunday** — 0 of 4 confirmed |
+| A class with exactly 3 confirmed students | **Math · Monday** — Rafi, Bima and Citra. This is the last-seat class every demo races for |
+| A duplicate booking attempt for the same child and class | **Aisyah is confirmed in Science · Tuesday.** Booking her there again is refused `already_booked` — step 3 of `npm run demo`, and two tests |
+| A payment failure case | **Bima's card was declined in Science · Tuesday**, and the window then closed, so his booking is `payment_failed` with a `failed` payment attempt against it. He holds no seat and may book again |
+
+`occupied_seats` is never written by the seed. The trigger derives it, which
+doubles as a check that the trigger works.
+
 ## Booking statuses
 
 | Status | Occupies a seat | On roster | Set by |
@@ -187,7 +202,8 @@ a class that seats four. The application code is identical in both runs.
 That is the cost of matching this scenario, and it is the interesting part. The
 charge succeeded; the seat did not. It cannot be rolled back — no transaction
 spans Postgres and a payment provider, and a database can `ROLLBACK` while a
-charge cannot be un-made. So the opposite action is performed instead: the
+charge cannot be un-made. So the refund is a **compensating action**, not a
+rollback: the opposite operation is performed instead, and the
 payment is refunded, the booking becomes `seat_unavailable`, and the parent is
 told, with the refund reference, on the screen that broke the news.
 
@@ -308,5 +324,11 @@ rate, will be the first thing to slow down.
 
 ## Design and plan
 
-[`docs/DESIGN.md`](docs/DESIGN.md) is the design this was built from.
-[`docs/PLAN.md`](docs/PLAN.md) is the task-by-task implementation plan.
+[`docs/DESIGN.md`](docs/DESIGN.md) is the design, kept current with the code.
+
+[`docs/PLAN.md`](docs/PLAN.md) is the task-by-task plan the build followed,
+written before any code and **left as written**. One decision in it was wrong —
+it reserved the seat on selection, which makes step 2 of the required scenario
+impossible — and it says so at the top rather than being quietly edited to match
+the outcome. The task sequence and the verification steps still describe how the
+work was done.

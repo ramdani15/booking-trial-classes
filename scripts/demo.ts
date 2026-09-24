@@ -50,21 +50,34 @@ async function main() {
   console.log('\n  Trial booking demo — seeded database, real Postgres\n');
 
   // 1
-  console.log('  [1/6] seats available');
+  console.log('  [1/7] seats available');
   const classes = (await call('GET', '/classes')).body;
   check('class 1 (Science)', classes.find((c: any) => c.id === 1).seats_available, 4);
   check('class 2 (Math, the race target)', classes.find((c: any) => c.id === 2).seats_available, 1);
 
   // 2
-  console.log('\n  [2/6] selecting a class takes no seat and joins no roster');
+  console.log('\n  [2/7] selecting a class takes no seat and joins no roster');
   const held = await hold(1, 1);
   check('status', held.body.status, 'pending_payment');
   const roster1 = (await call('GET', '/admin/classes/1/roster')).body;
   check('occupied seats', roster1.class.occupied_seats, 0);
   check('students on roster', roster1.students.length, 0);
 
-  // 3 — the required scenario
-  console.log('\n  [3/6] ten parents select the last seat, then all pay at once');
+  // 3
+  console.log('\n  [3/7] the same child cannot be booked into a class twice');
+  // Seeded: Aisyah is already confirmed in class 3.
+  const duplicate = await hold(1, 3);
+  check('status', duplicate.status, 409);
+  check('code', duplicate.body.code, 'already_booked');
+  const stillOne = (await call('GET', '/admin/classes/3/roster')).body;
+  check('roster unchanged', stillOne.students.map((s: any) => s.name), ['Aisyah']);
+
+  // A second pending booking for the same child and class is refused too.
+  const again = await hold(1, 1);
+  check('a second booking for class 1', again.body.code, 'already_booked');
+
+  // 4 — the required scenario
+  console.log('\n  [4/7] ten parents select the last seat, then all pay at once');
   const { rows: racers } = await db.query<{ id: number }>(
     `insert into students (parent_id, name, grade)
      select 1, 'Racer ' || g, 'P3' from generate_series(1, 10) g returning id`,
@@ -81,17 +94,17 @@ async function main() {
   const { rows: seats } = await db.query(`select occupied_seats from trial_classes where id = 2`);
   check('class 2 occupied', seats[0].occupied_seats, 4);
 
-  // 4
-  console.log('\n  [4/6] a declined card keeps the hold, and the retry succeeds');
+  // 5
+  console.log('\n  [5/7] a declined card changes nothing, and the retry succeeds');
   const declined = await pay(held.body.id, 'tok_decline');
   check('response', declined.body.code, 'payment_declined');
   const stillHeld = (await call('GET', `/bookings/${held.body.id}`)).body;
-  check('booking status', stillHeld.status, 'pending_payment');
+  check('booking untouched', stillHeld.status, 'pending_payment');
   const retried = await pay(held.body.id, 'tok_ok');
   check('after retry', retried.body.status, 'confirmed');
 
-  // 5
-  console.log('\n  [5/6] a booking left too long can no longer be paid');
+  // 6
+  console.log('\n  [6/7] a booking left too long can no longer be paid');
   const doomed = await hold(2, 1);
   await db.query(`update bookings set expires_at = now() - interval '1 second' where id = $1`, [
     doomed.body.id,
@@ -105,8 +118,8 @@ async function main() {
   check('payment attempts made', charged[0].n, 0);
   const closed = (await call('GET', `/bookings/${doomed.body.id}`)).body;
   check('booking status', closed.status, 'expired');
-  // 6
-  console.log('\n  [6/6] the roster carries confirmed students only');
+  // 7
+  console.log('\n  [7/7] the roster carries confirmed students only');
   const roster = (await call('GET', '/admin/classes/1/roster')).body;
   check('confirmed students', roster.students.map((s: any) => s.name), ['Aisyah']);
   check('refunds', roster.refunds, 0);

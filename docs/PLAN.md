@@ -1,5 +1,30 @@
 # Trial Booking Implementation Plan
 
+> **Superseded in one respect, and deliberately kept as written.**
+>
+> This is the plan the implementation followed, written before any code existed.
+> One decision in it turned out to be wrong.
+>
+> It reserves the seat when a parent selects a class — `booking_occupies` covers
+> `pending_payment` as well as `confirmed` — which makes step 2 of the brief's
+> required scenario impossible: *"User B selects the same slot"* is refused,
+> because User A's selection already took it. The tests passed, the invariants
+> held, and the requirement was still unmet.
+>
+> It was found by walking the brief's four numbered steps in the browser after
+> the build was green, and changed in `c920955`: only `confirmed` occupies a seat,
+> and the race is decided by the payment rather than by the selection.
+>
+> **[`DESIGN.md`](DESIGN.md) and [`../README.md`](../README.md) describe what was
+> built.** Everything below the schema in this file — the task sequence, the
+> tests, the verification steps — still reflects how the work was done. The seat
+> model does not.
+>
+> It is left as written because a plan edited to match its outcome hides the one
+> thing worth knowing: that a green test suite is not evidence a requirement has
+> been met.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a trial-class booking slice where overbooking and duplicate bookings are impossible because Postgres refuses them, and where a payment that outlives its seat hold is refunded automatically.
