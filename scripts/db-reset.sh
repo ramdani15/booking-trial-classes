@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# Bring the database up and reload it from schema + seed. Idempotent.
-# psql runs inside the container, so the host needs only Docker.
+# Bring the database up if it is the bundled one, then load schema + seed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-docker compose up -d --wait db
-for f in db/schema.sql db/seed.sql "$@"; do
-  echo "--> $f"
-  docker compose exec -T db psql -v ON_ERROR_STOP=1 -U ottodot -d ottodot -q < "$f"
-done
-echo "database ready"
+# .env is read here too, so USE_BUNDLED_DB can live alongside DATABASE_URL.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
+# Set USE_BUNDLED_DB=0 when DATABASE_URL points at a Postgres you already run.
+if [ "${USE_BUNDLED_DB:-1}" = "1" ]; then
+  docker compose up -d --wait db
+fi
+
+exec npx ts-node scripts/db-reset.ts

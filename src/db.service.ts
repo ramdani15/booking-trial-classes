@@ -1,5 +1,6 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
+import { DATABASE_URL } from './config';
 
 // bigint arrives as a string by default, so ids would serialise as "6" rather
 // than 6. No id here approaches 2^53, which is the reason that default exists.
@@ -14,10 +15,7 @@ export type Runner = {
 
 @Injectable()
 export class DbService implements OnModuleDestroy {
-  readonly pool = new Pool({
-    connectionString:
-      process.env.DATABASE_URL ?? 'postgres://ottodot:ottodot@localhost:5433/ottodot',
-  });
+  readonly pool = new Pool({ connectionString: DATABASE_URL });
 
   // Generic so callers name the shape they expect. Hand-written types in
   // rows.ts rather than generated ones: what matters is that a status string

@@ -9,7 +9,8 @@
     "db:reset": "./scripts/db-reset.sh",
     "start": "ts-node src/main.ts",
     "expire-holds": "ts-node scripts/expire-holds.ts",
-    "demo": "ts-node scripts/demo.ts"
+    "demo": "ts-node scripts/demo.ts",
+    "verify:db": "ts-node scripts/verify-invariants.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +20,7 @@
     "@nestjs/common": "^11.2.6",
     "@nestjs/core": "^11.2.6",
     "@nestjs/platform-express": "^11.2.6",
+    "dotenv": "^18.0.3",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"

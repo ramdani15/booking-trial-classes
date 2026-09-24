@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trial Class Booking</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='14' font-size='14'>🎟️</text></svg>">
 <style>
   :root {
     --bg: #fbfbfa; --card: #fff; --ink: #1c1c1a; --muted: #6b6b66;
@@ -120,7 +121,10 @@ async function screenPick() {
       // actually refuses, and it can refuse a class that looked open a moment
       // ago.
       if (status !== 201) return screenResult({ status, body });
-      state.booking = body;
+      // POST /bookings answers with the booking, not the class, and the pick
+      // screen already has the class in hand.
+      const klass = classes.find((c) => c.id === Number(el.dataset.class));
+      state.booking = { ...body, subject: klass.subject, starts_at: klass.starts_at };
       screenPay();
     }));
 }
@@ -128,21 +132,32 @@ async function screenPick() {
 // 2. Pay, with the hold counting down.
 function screenPay() {
   stopTicker();
+  // Test tokens for the mock provider, the convention a real one uses for its
+  // sandbox. A parent would never choose these; they stand in for a card form
+  // so every outcome can be reached on demand.
   const tokens = [
-    ['tok_ok', 'succeeds'],
-    ['tok_decline', 'declined at the card'],
-    ['tok_slow', 'succeeds slowly — outlives a short hold'],
-    ['tok_refund_fail', 'slow, and then refuses to refund'],
+    ['tok_ok', 'Payment succeeds'],
+    ['tok_decline', 'Card is declined'],
+    ['tok_slow', 'Succeeds slowly — can outlive a short hold'],
+    ['tok_refund_fail', 'Succeeds slowly, then refuses to refund'],
   ];
   view.innerHTML = `
     <div class="card">
-      <div class="big">${esc(state.booking.subject ?? 'Trial class')} &middot; ${money(4900)}</div>
-      <div class="muted">Booking #${state.booking.id} &middot; seat held, not yet confirmed</div>
+      <div class="big">${esc(state.booking.subject)} &middot; ${money(4900)}</div>
+      <div class="muted">
+        ${esc(new Date(state.booking.starts_at).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' }))}
+        &middot; booking #${state.booking.id} &middot; seat held, not yet confirmed
+      </div>
       <div class="row"><span>Hold expires in</span><b id="countdown">—</b></div>
+      <div class="muted" style="margin:10px 0 2px">
+        Test payment — mock provider, no card is charged. A real build puts a
+        card form here; these stand in for one so every outcome can be reached
+        on demand.
+      </div>
       ${tokens.map(([t, label], i) => `
         <label class="opt">
           <input type="radio" name="token" value="${t}" ${i === 0 ? 'checked' : ''}>
-          <code>${t}</code> <span class="muted">${esc(label)}</span>
+          ${esc(label)}
         </label>`).join('')}
       <div class="row">
         <button id="pay">Pay ${money(4900)}</button>
