@@ -202,7 +202,8 @@ a class that seats four. The application code is identical in both runs.
 That is the cost of matching this scenario, and it is the interesting part. The
 charge succeeded; the seat did not. It cannot be rolled back — no transaction
 spans Postgres and a payment provider, and a database can `ROLLBACK` while a
-charge cannot be un-made. So the opposite action is performed instead: the
+charge cannot be un-made. So the refund is a **compensating action**, not a
+rollback: the opposite operation is performed instead, and the
 payment is refunded, the booking becomes `seat_unavailable`, and the parent is
 told, with the refund reference, on the screen that broke the news.
 
@@ -323,5 +324,11 @@ rate, will be the first thing to slow down.
 
 ## Design and plan
 
-[`docs/DESIGN.md`](docs/DESIGN.md) is the design this was built from.
-[`docs/PLAN.md`](docs/PLAN.md) is the task-by-task implementation plan.
+[`docs/DESIGN.md`](docs/DESIGN.md) is the design, kept current with the code.
+
+[`docs/PLAN.md`](docs/PLAN.md) is the task-by-task plan the build followed,
+written before any code and **left as written**. One decision in it was wrong —
+it reserved the seat on selection, which makes step 2 of the required scenario
+impossible — and it says so at the top rather than being quietly edited to match
+the outcome. The task sequence and the verification steps still describe how the
+work was done.
