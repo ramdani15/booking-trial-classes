@@ -86,6 +86,21 @@ to take a seat must `UPDATE` that one row, which is what serialises parents
 competing for the same one — and because only a confirmation occupies a seat,
 that contention lands on the payment.
 
+## Seed data
+
+`db/seed.sql`, loaded by `npm run db:reset`. Three parents, four children, three
+classes, covering each case the brief asks to see:
+
+| Case | Where |
+|---|---|
+| A class with available seats | **Science · Sunday** — 0 of 4 confirmed |
+| A class with exactly 3 confirmed students | **Math · Monday** — Rafi, Bima and Citra. This is the last-seat class every demo races for |
+| A duplicate booking attempt for the same child and class | **Aisyah is confirmed in Science · Tuesday.** Booking her there again is refused `already_booked` — step 3 of `npm run demo`, and two tests |
+| A payment failure case | **Bima's card was declined in Science · Tuesday**, and the window then closed, so his booking is `payment_failed` with a `failed` payment attempt against it. He holds no seat and may book again |
+
+`occupied_seats` is never written by the seed. The trigger derives it, which
+doubles as a check that the trigger works.
+
 ## Booking statuses
 
 | Status | Occupies a seat | On roster | Set by |
