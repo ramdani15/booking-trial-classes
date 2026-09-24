@@ -1,0 +1,38 @@
+{
+  "name": "booking-trial-classes",
+  "version": "1.0.0",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "jest --config test/jest-e2e.json --runInBand",
+    "db:reset": "./scripts/db-reset.sh",
+    "start": "ts-node src/main.ts",
+    "expire-holds": "ts-node scripts/expire-holds.ts",
+    "demo": "ts-node scripts/demo.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@nestjs/common": "^11.2.6",
+    "@nestjs/core": "^11.2.6",
+    "@nestjs/platform-express": "^11.2.6",
+    "pg": "^8.23.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
+  },
+  "devDependencies": {
+    "@nestjs/testing": "^11.2.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.0",
+    "ts-jest": "^29.4.13",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
