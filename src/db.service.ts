@@ -1,5 +1,9 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
-import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
+
+// bigint arrives as a string by default, so ids would serialise as "6" rather
+// than 6. No id here approaches 2^53, which is the reason that default exists.
+types.setTypeParser(types.builtins.INT8, (v) => Number(v));
 
 export type Runner = {
   query: <T extends QueryResultRow = any>(

@@ -73,7 +73,9 @@ set afterwards to match whatever passed:
   is the thing under test; mocking it would mock the answer.
 - `scripts/verify-invariants.sql` — proves the database refuses violations with
   no application code present at all.
-- Deliberately removed the `trial_classes_not_overbooked` constraint and re-ran
-  the concurrency test to confirm it then creates more seats than the class has.
-  A test that has never failed is not evidence.
+- Deliberately weakened the `trial_classes_not_overbooked` constraint and re-ran
+  the concurrency test. All ten parents were then given a seat in a class that
+  seats four. That is the evidence the test tests something, and the evidence
+  that the application code alone does not prevent overbooking — restoring the
+  constraint returns the run to one winner and nine `409 class_full`.
 - `npm run demo` — the six scenarios end to end, asserting as it goes.
