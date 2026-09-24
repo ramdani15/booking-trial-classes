@@ -16,10 +16,12 @@ npm run demo         # walks all six scenarios and asserts as it goes
 npm start            # http://localhost:3000   (admin: /?admin=1)
 ```
 
-The database invariants can also be checked with no application code present:
+The database invariants can also be checked with no application code present.
+It asserts against the seeded rows, so reset first if the demo or the app has
+been run since:
 
 ```bash
-npm run verify:db
+npm run db:reset && npm run verify:db
 ```
 
 To point at a Postgres you already run instead of the bundled one, copy
@@ -211,8 +213,10 @@ lazy sweep and the counts would otherwise stay wrong all day.
 
 - `npm test` — 33 tests, 6 suites, against a real Postgres. The database is the
   thing under test, so mocking it would mock the answer.
-- `scripts/verify-invariants.sql` — proves the database refuses violations with
-  no application code present. Each case asserts on the error class raised
+- `npm run verify:db` — runs `scripts/verify-invariants.sql`, proving the
+  database refuses violations with no application code present. It reads the
+  seeded rows, so it wants a freshly reset database. Each case asserts on the
+  error class raised
   (`check_violation` versus `unique_violation`), not merely that an error
   occurred, so a check cannot pass because the wrong constraint fired.
 - `npm run demo` — all six scenarios end to end, asserting as it goes, exit code

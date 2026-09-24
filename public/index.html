@@ -80,53 +80,84 @@ async function screenPick() {
   ]);
   if (state.studentId === null) state.studentId = students[0].id;
 
-  view.innerHTML = `
-    <div class="card">
-      <div class="big">Whose trial is it?</div>
-      ${students.map((s) => `
-        <label class="opt">
-          <input type="radio" name="student" value="${s.id}" ${s.id === state.studentId ? 'checked' : ''}>
-          ${esc(s.name)} <span class="muted">${esc(s.grade)} &middot; ${esc(s.parent_name)}</span>
-        </label>`).join('')}
-    </div>
-    <div class="card">
-      <div class="big">Pick a class</div>
-      ${classes.map((c) => {
-        const when = new Date(c.starts_at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
-        const full = c.seats_available === 0;
+  // Whether this child can take this class. Both reasons are shown before the
+  // click rather than after it — but neither is what enforces anything. The
+  // backend refuses a full class and a duplicate booking regardless, which a
+  // stale tab proves.
+  const availability = (klass) => {
+    const child = students.find((s) => s.id === state.studentId);
+    if (child.active_class_ids.includes(klass.id)) return { ok: false, why: 'already booked' };
+    if (klass.seats_available === 0) return { ok: false, why: 'full' };
+    return { ok: true, why: `${klass.seats_available} of ${klass.capacity} seats left` };
+  };
+
+  const classRows = () =>
+    classes
+      .map((c) => {
+        const when = new Date(c.starts_at).toLocaleString([], {
+          weekday: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const { ok, why } = availability(c);
         return `
         <div class="row">
           <div>
             ${esc(c.subject)} <span class="muted">&middot; ${esc(when)}</span><br>
-            <span class="muted ${full ? 'bad' : ''}">
-              ${full ? 'full' : c.seats_available + ' of ' + c.capacity + ' seats left'}
-            </span>
+            <span class="muted ${ok ? '' : 'bad'}">${esc(why)}</span>
           </div>
-          <button data-class="${c.id}" ${full ? 'disabled' : ''}>Book</button>
+          <button data-class="${c.id}" ${ok ? '' : 'disabled'}>Book</button>
         </div>`;
-      }).join('')}
+      })
+      .join('');
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="big">Whose trial is it?</div>
+      ${students
+        .map(
+          (s) => `
+        <label class="opt">
+          <input type="radio" name="student" value="${s.id}" ${s.id === state.studentId ? 'checked' : ''}>
+          ${esc(s.name)} <span class="muted">${esc(s.grade)} &middot; ${esc(s.parent_name)}</span>
+        </label>`,
+        )
+        .join('')}
+    </div>
+    <div class="card">
+      <div class="big">Pick a class</div>
+      <div id="classes">${classRows()}</div>
     </div>`;
 
-  view.querySelectorAll('input[name=student]').forEach((el) =>
-    el.addEventListener('change', () => { state.studentId = Number(el.value); }));
+  const bindBookButtons = () =>
+    view.querySelectorAll('button[data-class]').forEach((el) =>
+      el.addEventListener('click', async () => {
+        el.disabled = true;
+        const { status, body } = await api('/bookings', {
+          method: 'POST',
+          body: JSON.stringify({
+            student_id: state.studentId,
+            trial_class_id: Number(el.dataset.class),
+          }),
+        });
+        if (status !== 201) return screenResult({ status, body });
+        // POST /bookings answers with the booking, not the class, and this
+        // screen already has the class in hand.
+        const klass = classes.find((c) => c.id === Number(el.dataset.class));
+        state.booking = { ...body, subject: klass.subject, starts_at: klass.starts_at };
+        screenPay();
+      }),
+    );
 
-  view.querySelectorAll('button[data-class]').forEach((el) =>
-    el.addEventListener('click', async () => {
-      el.disabled = true;
-      const { status, body } = await api('/bookings', {
-        method: 'POST',
-        body: JSON.stringify({ student_id: state.studentId, trial_class_id: Number(el.dataset.class) }),
-      });
-      // The UI hides full classes as a convenience; the backend is what
-      // actually refuses, and it can refuse a class that looked open a moment
-      // ago.
-      if (status !== 201) return screenResult({ status, body });
-      // POST /bookings answers with the booking, not the class, and the pick
-      // screen already has the class in hand.
-      const klass = classes.find((c) => c.id === Number(el.dataset.class));
-      state.booking = { ...body, subject: klass.subject, starts_at: klass.starts_at };
-      screenPay();
-    }));
+  view.querySelectorAll('input[name=student]').forEach((el) =>
+    el.addEventListener('change', () => {
+      state.studentId = Number(el.value);
+      // What a child may book depends on the child, so the list is redrawn.
+      document.getElementById('classes').innerHTML = classRows();
+      bindBookButtons();
+    }),
+  );
+  bindBookButtons();
 }
 
 // 2. Pay, with the hold counting down.
