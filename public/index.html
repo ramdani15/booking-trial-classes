@@ -177,9 +177,13 @@ function screenPay() {
       <div class="big">${esc(state.booking.subject)} &middot; ${money(4900)}</div>
       <div class="muted">
         ${esc(new Date(state.booking.starts_at).toLocaleString([], { weekday: 'long', hour: '2-digit', minute: '2-digit' }))}
-        &middot; booking #${state.booking.id} &middot; seat held, not yet confirmed
+        &middot; booking #${state.booking.id} &middot; not confirmed yet
       </div>
-      <div class="row"><span>Hold expires in</span><b id="countdown">—</b></div>
+      <div class="row"><span>Payment window closes in</span><b id="countdown">—</b></div>
+      <div class="muted">
+        The seat is not reserved. Someone else can pay for it first, and if they
+        do you are refunded.
+      </div>
       <div class="muted" style="margin:10px 0 2px">
         Test payment — mock provider, no card is charged. A real build puts a
         card form here; these stand in for one so every outcome can be reached
@@ -227,9 +231,9 @@ function screenResult({ status, body }) {
   stopTicker();
   const outcomes = {
     confirmed: ['ok', 'Confirmed', 'The seat is theirs. See it on the admin roster.'],
-    payment_declined: ['bad', 'Card declined', 'The seat is still held — try again before the hold runs out.'],
-    hold_expired: ['warn', 'Hold expired', 'No charge was made. Book again if a seat is free.'],
-    seat_unavailable: ['warn', 'Seat taken', null],
+    payment_declined: ['bad', 'Card declined', 'Nothing was charged — try again before the window closes.'],
+    booking_expired: ['warn', 'Booking expired', 'No charge was made. Book again if a seat is free.'],
+    seat_unavailable: ['warn', 'Someone paid first', null],
     class_full: ['bad', 'Class full', 'Someone took the last seat first.'],
     already_booked: ['bad', 'Already booked', 'This child already has an active booking for this class.'],
     booking_not_pending: ['warn', 'Nothing to pay', 'This booking is no longer holding a seat.'],
@@ -240,7 +244,7 @@ function screenResult({ status, body }) {
 
   const detail = key === 'seat_unavailable'
     ? (body.refund_ref
-        ? `${money(4900)} refunded &middot; <code>${esc(body.refund_ref)}</code>`
+        ? `The last seat went to another parent, so the ${money(4900)} has been refunded &middot; <code>${esc(body.refund_ref)}</code>`
         : 'The refund did not go through. Our team will be in touch.')
     : note;
 
@@ -251,7 +255,7 @@ function screenResult({ status, body }) {
       ${body.message ? `<div class="muted" style="margin-top:8px">${esc(body.message)}</div>` : ''}
       <div class="row">
         <button id="again">Book another</button>
-        ${key === 'payment_declined' ? '<button id="retry" class="ghost">Back to payment</button>' : ''}
+        ${key === 'payment_declined' ? '<button id="retry" class="ghost">Try another card</button>' : ''}
       </div>
     </div>`;
 
@@ -292,7 +296,9 @@ async function screenAdmin() {
         <div><b class="${r.refunds_failed ? 'bad' : ''}">${r.refunds_failed}</b><span class="muted">refund failed</span></div>
       </div>
       <div class="muted" style="margin-top:12px">
-        Occupied counts live holds as well as confirmed students. The roster lists confirmed only.
+        A seat is spent only when a payment claims it, so "awaiting payment" may
+        exceed the seats left — those parents are competing, and the losers are
+        refunded. The roster lists confirmed students only.
         <b>Refund failed should always be zero</b> — each one is a parent charged for a class they are not in.
       </div>
     </div>`;

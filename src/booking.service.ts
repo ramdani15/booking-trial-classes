@@ -14,18 +14,29 @@ export class BookingService {
     private readonly payments: PaymentsService,
   ) {}
 
+  // Selecting a class reserves nothing. Two parents can both hold a pending
+  // booking for the last seat and both reach payment — which is the scenario
+  // this has to support. The seat is taken by whichever payment commits first.
   async createHold(studentId: number, trialClassId: number): Promise<BookingRow> {
     try {
       return await this.db.withTransaction(async (client) => {
-        // Release any lapsed holds on this class first, so an abandoned tab
-        // never keeps a seat from the next parent who asks for it.
         await this.expiry.sweep(client, trialClassId);
 
-        // No capacity check here on purpose. Counting first and inserting
-        // second is the bug: two parents both read three, both write, and the
-        // class holds five. The INSERT fires a trigger that UPDATEs the class
-        // row, so the second transaction blocks on that row until the first
-        // commits, then re-evaluates the CHECK against the committed count.
+        // Advisory only, and knowingly racy: it stops a parent starting a
+        // payment for a class that is already full, which is a courtesy rather
+        // than a guarantee. Nothing downstream trusts it — the seat is decided
+        // by the CHECK constraint when the payment claims it.
+        const klass = await client.query<{ full: boolean }>(
+          `select occupied_seats >= capacity as full from trial_classes where id = $1`,
+          [trialClassId],
+        );
+        if (!klass.rows[0]) {
+          throw new BookingError('not_found', 'Unknown trial class.');
+        }
+        if (klass.rows[0].full) {
+          throw new BookingError('class_full', 'This trial class is full.');
+        }
+
         const { rows } = await client.query<BookingRow>(
           `insert into bookings (student_id, trial_class_id, status, expires_at)
            values ($1, $2, 'pending_payment', now() + ($3 || ' seconds')::interval)
@@ -36,11 +47,8 @@ export class BookingService {
         return rows[0];
       });
     } catch (err) {
-      // The database is what prevents overbooking. This only translates its
-      // refusal into something a parent can read.
+      if (err instanceof BookingError) throw err;
       switch (pgCode(err)) {
-        case '23514':
-          throw new BookingError('class_full', 'This trial class is full.');
         case '23505':
           throw new BookingError(
             'already_booked',
@@ -70,7 +78,7 @@ export class BookingService {
     // returning too late never becomes a refund.
     if (!booking.expires_at || booking.expires_at.getTime() <= Date.now()) {
       await this.expiry.sweep(this.db, booking.trial_class_id);
-      throw new BookingError('hold_expired', 'This seat hold has expired. Please book again.');
+      throw new BookingError('booking_expired', 'This seat hold has expired. Please book again.');
     }
 
     // Reserve the key before charging: a concurrent replay loses this insert
@@ -92,15 +100,25 @@ export class BookingService {
     }
     await this.payments.markSucceeded(attemptId, charge.ref);
 
-    // Claim the seat. The WHERE clause is the guard: if the hold lapsed while
-    // the charge was in flight, no row matches and the money has to go back.
-    const claimed = await this.db.query(
-      `update bookings set status = 'confirmed', expires_at = null
-        where id = $1 and status = 'pending_payment' and expires_at > now()
-        returning id`,
-      [bookingId],
-    );
-    if (claimed.rowCount === 1) return this.describe(bookingId);
+    // Claim the seat. This is where parents competing for the last one are
+    // resolved: the UPDATE fires a trigger that increments the class row, so a
+    // competing payment blocks there until the first commits, then re-evaluates
+    // the CHECK against the committed count and is refused with 23514.
+    //
+    // The WHERE clause covers the other way to lose — the booking lapsed while
+    // the charge was in flight — which produces no matching row instead.
+    try {
+      const claimed = await this.db.query(
+        `update bookings set status = 'confirmed', expires_at = null
+          where id = $1 and status = 'pending_payment' and expires_at > now()
+          returning id`,
+        [bookingId],
+      );
+      if (claimed.rowCount === 1) return this.describe(bookingId);
+    } catch (err) {
+      // 23514 capacity, 23505 this child confirmed by a concurrent request.
+      if (pgCode(err) !== '23514' && pgCode(err) !== '23505') throw err;
+    }
 
     return this.releaseAndRefund(bookingId, attemptId, charge.ref);
   }

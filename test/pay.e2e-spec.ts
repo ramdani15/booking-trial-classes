@@ -68,7 +68,7 @@ describe('POST /bookings/:id/pay', () => {
     await expireIn(held.body.id, '-1 second');
 
     const res = await pay(held.body.id, 'tok_ok').expect(410);
-    expect(res.body.code).toBe('hold_expired');
+    expect(res.body.code).toBe('booking_expired');
 
     // The point of checking before charging: no money moved.
     const attempts = await db.query(
@@ -78,13 +78,17 @@ describe('POST /bookings/:id/pay', () => {
     expect(attempts.rows[0].n).toBe(0);
   });
 
-  // The second race point. tok_slow outlives the remaining hold, so the charge
-  // succeeds and the seat is gone by the time the claim runs.
-  it('refunds a charge that outlives its hold', async () => {
+  // Someone else took the seat between selecting it and paying for it.
+  it('refunds a payment for a seat that has gone', async () => {
     const held = await hold(1, 2).expect(201);
-    await expireIn(held.body.id, '1 second');
 
-    const res = await pay(held.body.id, 'tok_slow').expect(409);
+    const { rows: rivalStudent } = await db.query<{ id: number }>(
+      `insert into students (parent_id, name, grade) values (1, 'Faster', 'P3') returning id`,
+    );
+    const rival = await hold(rivalStudent[0].id, 2).expect(201);
+    await pay(rival.body.id, 'tok_ok').expect(200); // takes the last seat
+
+    const res = await pay(held.body.id, 'tok_ok').expect(409);
     expect(res.body.code).toBe('seat_unavailable');
     expect(res.body.refund_ref).toMatch(/^mock_rf_/);
 
@@ -103,7 +107,12 @@ describe('POST /bookings/:id/pay', () => {
 
   it('records refund_failed when the provider refuses the refund', async () => {
     const held = await hold(1, 2).expect(201);
-    await expireIn(held.body.id, '1 second');
+
+    const { rows: rivalStudent } = await db.query<{ id: number }>(
+      `insert into students (parent_id, name, grade) values (1, 'Quicker', 'P3') returning id`,
+    );
+    const rival = await hold(rivalStudent[0].id, 2).expect(201);
+    await pay(rival.body.id, 'tok_ok').expect(200);
 
     const res = await pay(held.body.id, 'tok_refund_fail').expect(409);
     expect(res.body.code).toBe('seat_unavailable');
@@ -116,6 +125,56 @@ describe('POST /bookings/:id/pay', () => {
 
     const roster = await request(app.getHttpServer()).get('/admin/classes/2/roster').expect(200);
     expect(roster.body.refunds_failed).toBe(1);
+  });
+
+  // The brief's required scenario, at the point it is actually decided.
+  //
+  //   1. User A selects the last available slot and moves to payment.
+  //   2. User B selects the same slot.
+  //   3. User B completes payment first and confirms the booking.
+  //   4. User A then tries to complete payment.
+  //
+  // Ten of them, all paying at once. Selecting reserved nothing, so every one
+  // of them believes the seat is available — which is true until someone pays.
+  it('gives the last seat to exactly one of ten simultaneous payments', async () => {
+    const { rows: racers } = await db.query<{ id: number }>(
+      `insert into students (parent_id, name, grade)
+       select 1, 'Racer ' || g, 'P3' from generate_series(1, 10) g
+       returning id`,
+    );
+
+    // Step 1 and 2: everyone selects the same last slot. All succeed.
+    const bookings = await Promise.all(racers.map((s) => hold(s.id, 2).expect(201)));
+
+    // Steps 3 and 4, with no ordering imposed.
+    const results = await Promise.all(bookings.map((b) => pay(b.body.id, 'tok_ok')));
+
+    const confirmed = results.filter((r) => r.status === 200);
+    const lost = results.filter((r) => r.body.code === 'seat_unavailable');
+
+    expect(confirmed).toHaveLength(1);
+    expect(lost).toHaveLength(9);
+
+    // Nobody who lost is out of pocket.
+    expect(lost.every((r) => typeof r.body.refund_ref === 'string')).toBe(true);
+
+    const { rows } = await db.query(
+      `select t.occupied_seats, t.capacity,
+              (select count(*)::int from bookings
+                where trial_class_id = 2 and status = 'confirmed') as confirmed,
+              (select count(*)::int from payment_attempts pa
+                 join bookings b on b.id = pa.booking_id
+                where b.trial_class_id = 2 and pa.status = 'refunded') as refunded,
+              (select count(*)::int from payment_attempts pa
+                 join bookings b on b.id = pa.booking_id
+                where b.trial_class_id = 2 and pa.status = 'refund_failed') as refund_failed
+         from trial_classes t where t.id = 2`,
+    );
+    expect(rows[0].occupied_seats).toBe(4);
+    expect(rows[0].occupied_seats).toBeLessThanOrEqual(rows[0].capacity);
+    expect(rows[0].confirmed).toBe(4);
+    expect(rows[0].refunded).toBe(9);
+    expect(rows[0].refund_failed).toBe(0);
   });
 
   it('charges once when the same idempotency key is replayed', async () => {

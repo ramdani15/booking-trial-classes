@@ -20,16 +20,18 @@ describe('hold expiry', () => {
     await app.close();
   });
 
-  it('releases a lapsed hold and frees the seat', async () => {
+  it('closes a lapsed booking so it can no longer be paid', async () => {
     await db.query(
       `insert into bookings (student_id, trial_class_id, status, expires_at)
        values (1, 1, 'pending_payment', now() - interval '1 second')`,
     );
+    // A pending booking never took a seat, so nothing is released here. What
+    // the sweep does is close the payment window.
     const before = await db.query(`select occupied_seats from trial_classes where id = 1`);
-    expect(before.rows[0].occupied_seats).toBe(1);
+    expect(before.rows[0].occupied_seats).toBe(0);
 
-    const released = await expiry.sweep(db, null);
-    expect(released).toBe(1);
+    const swept = await expiry.sweep(db, null);
+    expect(swept).toBe(1);
 
     const after = await db.query(
       `select t.occupied_seats, b.status, b.expires_at
@@ -58,7 +60,7 @@ describe('hold expiry', () => {
     expect(after.rows[0].status).toBe('payment_failed');
   });
 
-  it('leaves live holds alone', async () => {
+  it('leaves live bookings alone', async () => {
     await db.query(
       `insert into bookings (student_id, trial_class_id, status, expires_at)
        values (1, 1, 'pending_payment', now() + interval '5 minutes')`,

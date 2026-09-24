@@ -31,7 +31,7 @@ update bookings b
          then 'payment_failed'::booking_status
          else 'expired'::booking_status
        end,
-       status_reason = 'hold_expired',
+       status_reason = 'booking_expired',
        expires_at = null
   from stale
  where b.id = stale.id
