@@ -66,16 +66,22 @@ it. Getting the test first is what caught the capacity bug above.
 
 ## How I verified the final implementation
 
-What this has to clear, written down before the code exists so the bar is not
-set afterwards to match whatever passed:
+- **`npm test` — 33 tests, 6 suites, against a real Postgres.** The database is
+  the thing under test; mocking it would mock the answer.
+- **`scripts/verify-invariants.sql`** proves the database refuses violations with
+  no application code present. Seven cases, each asserting on the error class
+  raised rather than on "an error happened".
+- **`npm run demo`** walks all six scenarios end to end and asserts as it goes,
+  exiting non-zero on any mismatch, so the printout cannot quietly be lying.
+- **The concurrency test was made to fail.** Weakening
+  `trial_classes_not_overbooked` and re-running it gave all ten parents a seat in
+  a class that seats four. Restoring it returns the run to one `201` and nine
+  `409 class_full`, with the application code identical in both runs. A test that
+  has never failed is not evidence.
 
-- `npm test` — every suite against a real Postgres, never a mock. The database
-  is the thing under test; mocking it would mock the answer.
-- `scripts/verify-invariants.sql` — proves the database refuses violations with
-  no application code present at all.
-- Deliberately weakened the `trial_classes_not_overbooked` constraint and re-ran
-  the concurrency test. All ten parents were then given a seat in a class that
-  seats four. That is the evidence the test tests something, and the evidence
-  that the application code alone does not prevent overbooking — restoring the
-  constraint returns the run to one winner and nine `409 class_full`.
-- `npm run demo` — the six scenarios end to end, asserting as it goes.
+Two tests failed for the right reason during the build and both were worth more
+than the code they guarded. One found that Nest answers every `POST` with 201,
+where paying settles an existing booking and should be a 200. The other found
+that `tok_refund_fail` charged instantly, so the hold had not lapsed by the time
+the seat was claimed and the booking simply confirmed — the refund path it exists
+to exercise was never reached. The mock was wrong, not the test.

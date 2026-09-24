@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trial Class Booking</title>
+<style>
+  :root {
+    --bg: #fbfbfa; --card: #fff; --ink: #1c1c1a; --muted: #6b6b66;
+    --line: #e4e4df; --ok: #1a7f4b; --bad: #b4341f; --warn: #8a6100;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line);
+  }
+  .row:last-child { border-bottom: 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  button {
+    font: inherit; padding: 7px 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--ink); background: var(--ink); color: #fff;
+  }
+  button.ghost { background: transparent; color: var(--ink); }
+  button[disabled] { opacity: .35; cursor: not-allowed; }
+  label.opt { display: block; padding: 5px 0; cursor: pointer; }
+  code { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .big { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+  nav { margin-bottom: 16px; font-size: 13px; }
+  nav a { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .counts { display: flex; gap: 20px; margin-top: 14px; font-size: 13px; }
+  .counts b { display: block; font-size: 18px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Trial Class Booking</h1>
+  <div class="sub" id="sub">Four seats per class. A seat is yours only once payment succeeds.</div>
+  <nav><a href="?" id="navParent">Parent</a> &middot; <a href="?admin=1" id="navAdmin">Admin roster</a></nav>
+  <div id="view"></div>
+</main>
+
+<script>
+const view = document.getElementById('view');
+const api = async (path, opts) => {
+  const res = await fetch(path, {
+    ...opts,
+    headers: opts?.body ? { 'content-type': 'application/json' } : undefined,
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+};
+const esc = (s) => String(s).replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+const money = (c) => 'SGD ' + (c / 100).toFixed(2);
+
+let state = { studentId: null, booking: null, lastKey: null };
+let ticker = null;
+const stopTicker = () => { if (ticker) clearInterval(ticker); ticker = null; };
+
+// 1. Pick a child and a class.
+async function screenPick() {
+  stopTicker();
+  const [students, classes] = await Promise.all([
+    api('/students').then((r) => r.body),
+    api('/classes').then((r) => r.body),
+  ]);
+  if (state.studentId === null) state.studentId = students[0].id;
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="big">Whose trial is it?</div>
+      ${students.map((s) => `
+        <label class="opt">
+          <input type="radio" name="student" value="${s.id}" ${s.id === state.studentId ? 'checked' : ''}>
+          ${esc(s.name)} <span class="muted">${esc(s.grade)} &middot; ${esc(s.parent_name)}</span>
+        </label>`).join('')}
+    </div>
+    <div class="card">
+      <div class="big">Pick a class</div>
+      ${classes.map((c) => {
+        const when = new Date(c.starts_at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+        const full = c.seats_available === 0;
+        return `
+        <div class="row">
+          <div>
+            ${esc(c.subject)} <span class="muted">&middot; ${esc(when)}</span><br>
+            <span class="muted ${full ? 'bad' : ''}">
+              ${full ? 'full' : c.seats_available + ' of ' + c.capacity + ' seats left'}
+            </span>
+          </div>
+          <button data-class="${c.id}" ${full ? 'disabled' : ''}>Book</button>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  view.querySelectorAll('input[name=student]').forEach((el) =>
+    el.addEventListener('change', () => { state.studentId = Number(el.value); }));
+
+  view.querySelectorAll('button[data-class]').forEach((el) =>
+    el.addEventListener('click', async () => {
+      el.disabled = true;
+      const { status, body } = await api('/bookings', {
+        method: 'POST',
+        body: JSON.stringify({ student_id: state.studentId, trial_class_id: Number(el.dataset.class) }),
+      });
+      // The UI hides full classes as a convenience; the backend is what
+      // actually refuses, and it can refuse a class that looked open a moment
+      // ago.
+      if (status !== 201) return screenResult({ status, body });
+      state.booking = body;
+      screenPay();
+    }));
+}
+
+// 2. Pay, with the hold counting down.
+function screenPay() {
+  stopTicker();
+  const tokens = [
+    ['tok_ok', 'succeeds'],
+    ['tok_decline', 'declined at the card'],
+    ['tok_slow', 'succeeds slowly — outlives a short hold'],
+    ['tok_refund_fail', 'slow, and then refuses to refund'],
+  ];
+  view.innerHTML = `
+    <div class="card">
+      <div class="big">${esc(state.booking.subject ?? 'Trial class')} &middot; ${money(4900)}</div>
+      <div class="muted">Booking #${state.booking.id} &middot; seat held, not yet confirmed</div>
+      <div class="row"><span>Hold expires in</span><b id="countdown">—</b></div>
+      ${tokens.map(([t, label], i) => `
+        <label class="opt">
+          <input type="radio" name="token" value="${t}" ${i === 0 ? 'checked' : ''}>
+          <code>${t}</code> <span class="muted">${esc(label)}</span>
+        </label>`).join('')}
+      <div class="row">
+        <button id="pay">Pay ${money(4900)}</button>
+        <button id="replay" class="ghost" disabled>Replay last key</button>
+      </div>
+      <div class="muted">A replay reuses the same idempotency key, so it must not charge twice.</div>
+    </div>`;
+
+  const tick = () => {
+    const left = new Date(state.booking.expires_at) - Date.now();
+    const el = document.getElementById('countdown');
+    if (!el) return stopTicker();
+    if (left <= 0) { el.textContent = 'expired'; el.className = 'bad'; return stopTicker(); }
+    const s = Math.floor(left / 1000);
+    el.textContent = `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  };
+  tick();
+  ticker = setInterval(tick, 1000);
+
+  const send = async (key) => {
+    const token = view.querySelector('input[name=token]:checked').value;
+    state.lastKey = key;
+    view.querySelectorAll('button').forEach((b) => (b.disabled = true));
+    const res = await api(`/bookings/${state.booking.id}/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ payment_token: token, idempotency_key: key }),
+    });
+    screenResult(res);
+  };
+  document.getElementById('pay').addEventListener('click', () => send(crypto.randomUUID()));
+  document.getElementById('replay').addEventListener('click', () => send(state.lastKey));
+}
+
+// 3. Whatever happened, said plainly.
+function screenResult({ status, body }) {
+  stopTicker();
+  const outcomes = {
+    confirmed: ['ok', 'Confirmed', 'The seat is theirs. See it on the admin roster.'],
+    payment_declined: ['bad', 'Card declined', 'The seat is still held — try again before the hold runs out.'],
+    hold_expired: ['warn', 'Hold expired', 'No charge was made. Book again if a seat is free.'],
+    seat_unavailable: ['warn', 'Seat taken', null],
+    class_full: ['bad', 'Class full', 'Someone took the last seat first.'],
+    already_booked: ['bad', 'Already booked', 'This child already has an active booking for this class.'],
+    booking_not_pending: ['warn', 'Nothing to pay', 'This booking is no longer holding a seat.'],
+    payment_in_progress: ['warn', 'Already processing', 'That idempotency key is in flight — no second charge.'],
+  };
+  const key = status === 200 ? 'confirmed' : body.code;
+  const [cls, title, note] = outcomes[key] ?? ['bad', 'Something went wrong', body.message ?? ''];
+
+  const detail = key === 'seat_unavailable'
+    ? (body.refund_ref
+        ? `${money(4900)} refunded &middot; <code>${esc(body.refund_ref)}</code>`
+        : 'The refund did not go through. Our team will be in touch.')
+    : note;
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="big ${cls}">${esc(title)}</div>
+      <div class="muted">${detail ?? ''}</div>
+      ${body.message ? `<div class="muted" style="margin-top:8px">${esc(body.message)}</div>` : ''}
+      <div class="row">
+        <button id="again">Book another</button>
+        ${key === 'payment_declined' ? '<button id="retry" class="ghost">Back to payment</button>' : ''}
+      </div>
+    </div>`;
+
+  document.getElementById('again').addEventListener('click', () => { state.booking = null; screenPick(); });
+  document.getElementById('retry')?.addEventListener('click', screenPay);
+}
+
+// 4. What staff need before the class starts.
+async function screenAdmin() {
+  stopTicker();
+  const classes = await api('/classes').then((r) => r.body);
+  const id = Number(new URLSearchParams(location.search).get('class') ?? classes[0].id);
+  const { body: r } = await api(`/admin/classes/${id}/roster`);
+
+  view.innerHTML = `
+    <div class="card">
+      <div class="row">
+        <select id="pick">
+          ${classes.map((c) => `<option value="${c.id}" ${c.id === id ? 'selected' : ''}>
+            ${esc(c.subject)} — ${esc(new Date(c.starts_at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' }))}
+          </option>`).join('')}
+        </select>
+        <b>${r.class.occupied_seats} / ${r.class.capacity} occupied</b>
+      </div>
+      <table>
+        <tr><th>Student</th><th>Grade</th><th>Confirmed</th><th>Payment</th></tr>
+        ${r.students.length === 0 ? '<tr><td colspan="4" class="muted">No confirmed students yet.</td></tr>' : ''}
+        ${r.students.map((s) => `<tr>
+          <td>${esc(s.name)}</td><td>${esc(s.grade)}</td>
+          <td class="muted">${esc(new Date(s.confirmed_at).toLocaleTimeString())}</td>
+          <td><code>${esc(s.provider_ref ?? '—')}</code></td>
+        </tr>`).join('')}
+      </table>
+      <div class="counts">
+        <div><b>${r.holds_live}</b><span class="muted">live holds</span></div>
+        <div><b>${r.holds_lapsed}</b><span class="muted">lapsed</span></div>
+        <div><b>${r.refunds}</b><span class="muted">refunded</span></div>
+        <div><b class="${r.refunds_failed ? 'bad' : ''}">${r.refunds_failed}</b><span class="muted">refund failed</span></div>
+      </div>
+      <div class="muted" style="margin-top:12px">
+        Occupied counts live holds as well as confirmed students. The roster lists confirmed only.
+        <b>Refund failed should always be zero</b> — each one is a parent charged for a class they are not in.
+      </div>
+    </div>`;
+
+  document.getElementById('pick').addEventListener('change', (e) => {
+    location.search = `?admin=1&class=${e.target.value}`;
+  });
+}
+
+new URLSearchParams(location.search).has('admin') ? screenAdmin() : screenPick();
+</script>
+</body>
+</html>
