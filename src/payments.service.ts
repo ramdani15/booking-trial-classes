@@ -17,13 +17,19 @@ export class PaymentsService {
   //   tok_ok           succeeds
   //   tok_decline      declined at the card
   //   tok_slow         succeeds, but slowly enough to outlive a short hold
-  //   tok_refund_fail  succeeds, then refuses to be refunded
+  //   tok_refund_fail  as tok_slow, and then refuses to be refunded
+  //
+  // tok_refund_fail is deliberately slow as well: the refund path is only
+  // reachable when the charge outlives the hold, so an instant one would
+  // simply confirm the booking and never exercise the compensation.
   private readonly chargedWith = new Map<string, string>();
   private counter = 0;
 
   async charge(token: string): Promise<ChargeResult> {
     if (token === 'tok_decline') return { ok: false, reason: 'card_declined' };
-    if (token === 'tok_slow') await new Promise((r) => setTimeout(r, 1500));
+    if (token === 'tok_slow' || token === 'tok_refund_fail') {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
 
     const ref = `mock_pi_${++this.counter}`;
     this.chargedWith.set(ref, token);
