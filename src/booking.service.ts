@@ -4,11 +4,7 @@ import { ExpiryService } from './expiry.service';
 import { PaymentsService } from './payments.service';
 import { BookingRow } from './rows';
 import { BookingError } from './errors';
-
-// The hold window. Applies to pending_payment and nothing else: confirming
-// clears expires_at, and the bookings_hold_has_expiry constraint means a
-// confirmed booking cannot carry a deadline at all.
-export const HOLD_TTL_SECONDS = Number(process.env.HOLD_TTL_SECONDS ?? 600);
+import { HOLD_TTL_SECONDS } from './config';
 
 @Injectable()
 export class BookingService {

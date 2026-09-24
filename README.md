@@ -19,8 +19,13 @@ npm start            # http://localhost:3000   (admin: /?admin=1)
 The database invariants can also be checked with no application code present:
 
 ```bash
-docker compose exec -T db psql -U ottodot -d ottodot < scripts/verify-invariants.sql
+npm run verify:db
 ```
+
+To point at a Postgres you already run instead of the bundled one, copy
+`.env.example` to `.env`, set `DATABASE_URL`, and set `USE_BUNDLED_DB=0`. Nothing
+else changes — `db:reset`, the tests, the demo and the app all read the same
+value. Verified against Postgres 14 and 16.
 
 ## What was built
 
@@ -213,9 +218,23 @@ lazy sweep and the counts would otherwise stay wrong all day.
 - `npm run demo` — all six scenarios end to end, asserting as it goes, exit code
   1 on any mismatch.
 
-The mock payment provider is deterministic, never random: `tok_ok`,
-`tok_decline`, `tok_slow` (outlives a short hold), `tok_refund_fail`. A demo that
-fails at random is worse than no demo.
+The mock payment provider is deterministic, never random. `POST /bookings/:id/pay`
+takes a `payment_token`:
+
+| Token | Behaviour |
+|---|---|
+| `tok_ok` | succeeds |
+| `tok_decline` | declined at the card |
+| `tok_slow` | succeeds after `SLOW_CHARGE_MS`, long enough to outlive a short hold |
+| `tok_refund_fail` | as `tok_slow`, then refuses to be refunded |
+
+A demo that fails at random is worse than no demo. The screens offer these as
+plain choices rather than raw token names, because a parent would never pick
+one — they stand in for a card form so every outcome is reachable on demand.
+
+`SLOW_CHARGE_MS` defaults to 1500. The refund path needs a charge that outlives
+its hold, and that window is deliberately narrow, so raising it is the way to
+walk that path by hand rather than through the tests.
 
 ## What was deliberately cut
 

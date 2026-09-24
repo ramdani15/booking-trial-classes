@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, Runner, pgCode } from './db.service';
 import { PaymentAttemptRow } from './rows';
+import { SLOW_CHARGE_MS, TRIAL_PRICE_CENTS } from './config';
 
-export const TRIAL_PRICE_CENTS = 4900;
+export { TRIAL_PRICE_CENTS };
 
 export type ChargeResult = { ok: true; ref: string } | { ok: false; reason: string };
 
@@ -28,7 +29,7 @@ export class PaymentsService {
   async charge(token: string): Promise<ChargeResult> {
     if (token === 'tok_decline') return { ok: false, reason: 'card_declined' };
     if (token === 'tok_slow' || token === 'tok_refund_fail') {
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, SLOW_CHARGE_MS));
     }
 
     const ref = `mock_pi_${++this.counter}`;
