@@ -48,6 +48,25 @@ index covering only confirmed rows, and no expiry column at all. None of it
 would have failed to compile and the tests would have passed. It would simply
 have let one child hold two seats in the same class, quietly.
 
+**A design that made the requirement unreachable.** This is the one worth
+reading. The first build reserved the seat when a parent selected a class, so
+the class showed full the moment someone started paying. It is a better product
+— nobody is charged for a seat they cannot get — and I accepted the suggestion.
+What neither of us did was check it against the brief's numbered scenario, whose
+step 2 is "User B selects the same slot". Under a reservation, User B is refused
+at step 2 and never reaches step 4, which is the step the whole exercise is
+about. Worse, the README I had it write explained at length why that scenario
+"cannot occur", which is a confident way of answering a different question.
+
+I caught it by walking the scenario in the UI rather than reading the code, and
+rebuilt it: selecting reserves nothing, the seat is claimed by whichever payment
+commits first, and the losers are refunded. One line of SQL changed —
+`booking_occupies` went from `status in ('pending_payment','confirmed')` to
+`status = 'confirmed'` — and the enforcement stayed exactly where it was, a
+trigger and a CHECK, simply firing on the payment instead of on the selection.
+The lesson I would keep: an explanation of why a requirement does not apply is
+the point to stop and re-read the requirement.
+
 **Where its pushback was right.** It pointed out that blocking holds make the
 brief's literal race scenario impossible — User B cannot select a slot User A is
 holding. Rather than quietly answer an easier question, the README says so and
@@ -55,14 +74,18 @@ answers the harder one: the hold lapsing while the payment is in flight.
 
 ## What I would change next time
 
-Settle the seat model before letting it write a line of schema. I let it draft
-tables while the hold-versus-claim-on-payment question was still open, and the
-first schema quietly assumed claim-on-payment. Rewriting it was cheap here;
-on a real codebase that assumption spreads into migrations, fixtures and
-callers before anyone notices.
+Check the design against the requirement before writing the schema, not after
+the tests are green. The seat model was picked from options in a conversation
+and only measured against the brief once the whole thing was built. It cost a
+rebuild — cheap here, because the rule lived in one SQL function and the tests
+described behaviour rather than implementation. In a codebase where that
+assumption had spread through migrations, fixtures and callers, it would not
+have been.
 
 Second: ask for the check that would fail before asking for the code that passes
-it. Getting the test first is what caught the capacity bug above.
+it. Getting the test first is what caught the capacity bug above — and writing
+the acceptance test straight from the brief's numbered steps would have caught
+the seat model on day one.
 
 ## How I verified the final implementation
 
@@ -72,7 +95,9 @@ it. Getting the test first is what caught the capacity bug above.
   no application code present. Seven cases, each asserting on the error class
   raised rather than on "an error happened".
 - **`npm run demo`** walks all six scenarios end to end and asserts as it goes,
-  exiting non-zero on any mismatch, so the printout cannot quietly be lying.
+  exiting non-zero on any mismatch, so the printout cannot quietly be lying. Step
+  3 is the brief's scenario run literally: ten parents select the same last seat,
+  all pay at once, one is confirmed and nine are refunded.
 - **The concurrency test was made to fail.** Weakening
   `trial_classes_not_overbooked` and re-running it gave all ten parents a seat in
   a class that seats four. Restoring it returns the run to one `201` and nine

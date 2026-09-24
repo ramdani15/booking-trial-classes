@@ -65,28 +65,33 @@ begin
   raise notice 'ok: cancelling a booking releases the seat';
 end $$;
 
--- 5. A hold occupies a seat even though it is not on the roster.
+-- 5. A pending booking takes no seat, so several parents can queue for the
+-- last one. This is what makes the brief's scenario possible: User B can
+-- select the slot User A is already paying for.
 do $$
-declare seats int; roster int;
+declare seats int; pending int;
 begin
   insert into bookings (student_id, trial_class_id, status, expires_at)
   values (1, 1, 'pending_payment', now() + interval '10 minutes');
+  insert into bookings (student_id, trial_class_id, status, expires_at)
+  values (2, 1, 'pending_payment', now() + interval '10 minutes');
 
   select occupied_seats into seats from trial_classes where id = 1;
-  select count(*) into roster from bookings where trial_class_id = 1 and status = 'confirmed';
+  select count(*) into pending from bookings
+   where trial_class_id = 1 and status = 'pending_payment';
 
-  assert seats = 1, format('TC1 expected 1 occupied seat, got %s', seats);
-  assert roster = 0, format('TC1 roster must stay empty, got %s', roster);
-  raise notice 'ok: a hold occupies a seat but never reaches the roster';
+  assert seats = 0, format('TC1 expected 0 occupied seats, got %s', seats);
+  assert pending = 2, format('TC1 expected 2 pending bookings, got %s', pending);
+  raise notice 'ok: pending bookings queue for a seat without taking one';
 end $$;
 
--- 6. The same child cannot hold two seats in one class.
+-- 6. The same child cannot queue twice for one class.
 do $$
 begin
   begin
     insert into bookings (student_id, trial_class_id, status, expires_at)
     values (1, 1, 'pending_payment', now() + interval '10 minutes');
-    raise exception 'FAIL: duplicate hold was allowed';
+    raise exception 'FAIL: duplicate pending booking was allowed';
   exception when unique_violation then
     raise notice 'ok: duplicate active booking rejected (%)', sqlerrm;
   end;

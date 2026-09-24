@@ -3,6 +3,12 @@
 --   1. A trial class never exceeds its capacity.
 --   2. A child is never active in the same class twice.
 --
+-- A seat is occupied by a confirmed booking and by nothing else. Selecting a
+-- class reserves nothing, so two parents can both be on a payment page for the
+-- last seat; the first payment to commit takes it and the second is refunded.
+-- That is the scenario the brief requires, and it puts the contended write on
+-- the payment path where the money is.
+--
 -- Application code checks both first, to produce a friendly error. Correctness
 -- does not depend on those checks. The application never computes "is there
 -- room" and then acts on its own answer — that gap between reading and writing
@@ -53,15 +59,16 @@ create table trial_classes (
   subject        text        not null,
   starts_at      timestamptz not null,
   capacity       int         not null default 4 check (capacity > 0),
-  -- Denormalised deliberately. This is not a cache of a count, it is the lock
-  -- point: every attempt to occupy a seat must UPDATE this row, which
-  -- serialises competing transactions on it.
+  -- Confirmed bookings only. Denormalised deliberately: this is not a cache of
+  -- a count, it is the lock point. Every attempt to take a seat must UPDATE
+  -- this row, which serialises parents competing for the last one.
   occupied_seats int         not null default 0,
   created_at     timestamptz not null default now(),
   constraint trial_classes_not_overbooked
     check (occupied_seats between 0 and capacity)
 );
 
+-- pending_payment holds no seat. It is an intent to pay, with a deadline.
 create table bookings (
   id             bigserial      primary key,
   student_id     bigint         not null references students(id) on delete cascade,
@@ -78,9 +85,10 @@ create table bookings (
 
 create index on bookings (trial_class_id, status);
 
--- Covers holds as well as confirmations, so one child cannot hold two seats in
--- the same class. A lapsed or failed booking leaves the covered set, so a
--- parent can always retry.
+-- Covers pending bookings as well as confirmations, so one child cannot queue
+-- twice for the same class. Different children still compete freely — that is
+-- the race. A lapsed or failed booking leaves the covered set, so a parent can
+-- always retry.
 create unique index bookings_one_active_per_child_class
   on bookings (student_id, trial_class_id)
   where status in ('pending_payment', 'confirmed');
@@ -101,13 +109,14 @@ create index on payment_attempts (booking_id);
 
 create or replace function booking_occupies(s booking_status) returns boolean
 language sql immutable as $$
-  select s in ('pending_payment', 'confirmed')
+  select s = 'confirmed'
 $$;
 
 -- Keeps occupied_seats in step with bookings.status and, as a side effect,
 -- serialises concurrent claims on one class: the second transaction blocks on
 -- this UPDATE until the first commits, then re-evaluates the CHECK against the
--- committed row.
+-- committed row. Since only 'confirmed' occupies a seat, that contention lands
+-- on the pending_payment -> confirmed transition, which is the payment.
 create or replace function sync_occupied_seats() returns trigger
 language plpgsql as $$
 begin

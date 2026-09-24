@@ -5,7 +5,7 @@ import { HttpException } from '@nestjs/common';
 export type BookingErrorCode =
   | 'class_full'
   | 'already_booked'
-  | 'hold_expired'
+  | 'booking_expired'
   | 'payment_declined'
   | 'seat_unavailable'
   | 'booking_not_pending'
@@ -15,7 +15,7 @@ export type BookingErrorCode =
 const HTTP_STATUS: Record<BookingErrorCode, number> = {
   class_full: 409,
   already_booked: 409,
-  hold_expired: 410,
+  booking_expired: 410,
   payment_declined: 402,
   seat_unavailable: 409,
   booking_not_pending: 409,

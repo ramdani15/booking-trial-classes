@@ -22,7 +22,7 @@ describe('GET /admin/classes/:id/roster', () => {
     expect(res.body.class.occupied_seats).toBe(3);
   });
 
-  it('excludes a live hold from the roster but counts it', async () => {
+  it('counts a pending booking without giving it a seat', async () => {
     await request(app.getHttpServer())
       .post('/bookings')
       .send({ student_id: 1, trial_class_id: 2 })
@@ -32,7 +32,8 @@ describe('GET /admin/classes/:id/roster', () => {
 
     expect(res.body.students).toHaveLength(3);
     expect(res.body.holds_live).toBe(1);
-    expect(res.body.class.occupied_seats).toBe(4);
+    // Still three seats taken: the seat is only spent when a payment claims it.
+    expect(res.body.class.occupied_seats).toBe(3);
   });
 
   it('counts holds that lapsed', async () => {
