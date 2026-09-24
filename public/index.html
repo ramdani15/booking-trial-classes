@@ -169,8 +169,8 @@ function screenPay() {
   const tokens = [
     ['tok_ok', 'Payment succeeds'],
     ['tok_decline', 'Card is declined'],
-    ['tok_slow', 'Succeeds slowly — can outlive a short hold'],
-    ['tok_refund_fail', 'Succeeds slowly, then refuses to refund'],
+    ['tok_slow', 'Succeeds slowly — another parent can pay first'],
+    ['tok_refund_fail', 'Succeeds slowly, then the refund fails'],
   ];
   view.innerHTML = `
     <div class="card">
@@ -251,8 +251,7 @@ function screenResult({ status, body }) {
   view.innerHTML = `
     <div class="card">
       <div class="big ${cls}">${esc(title)}</div>
-      <div class="muted">${detail ?? ''}</div>
-      ${body.message ? `<div class="muted" style="margin-top:8px">${esc(body.message)}</div>` : ''}
+      <div class="muted">${detail ?? esc(body.message ?? '')}</div>
       <div class="row">
         <button id="again">Book another</button>
         ${key === 'payment_declined' ? '<button id="retry" class="ghost">Try another card</button>' : ''}
